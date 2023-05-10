@@ -10,10 +10,10 @@ namespace MinimalAPI.Repositories
 {
     public class UserRepository : IUserRepository
     {
-        private readonly AppDbContext _context;
+        private readonly UserDbContext _context;
 
 
-        public UserRepository(AppDbContext context)
+        public UserRepository(UserDbContext context)
         {
             _context = context; 
         }
@@ -25,85 +25,35 @@ namespace MinimalAPI.Repositories
         };
 
         public User UserLogin(UserLogin userLogin) {
-            try
-            {
-                Connection connection = new Connection();
-                SqlCommand validateCmd = new SqlCommand();
-                var sqlConnect = connection.getConnection();
 
-                using (sqlConnect)
-                {
-                    sqlConnect.Open();
-                    var query = string.Format("SELECT * FROM dbo.Users WHERE Username = '{0}' and Password = '{1}'",userLogin.Username,userLogin.Password);
-                    validateCmd = new SqlCommand(query, sqlConnect);
+            var u = _context.Users.Where(x => x.Username == userLogin.Username && x.Password == userLogin.Password);  
 
-                    SqlDataReader reader = validateCmd.ExecuteReader();
-
-                    while (reader.Read())
-                    { 
-                        //retrieve data
-                        var col1User = reader.GetValue(0);
-                        var col2Email = reader.GetValue(1);
-                        var col3Password = reader.GetValue(2);
-                        var col4Role = reader.GetValue(3);
-
-                        var returnUser = new User();
-
-
-                        returnUser.Username = col1User.ToString();
-                        returnUser.Email = col2Email.ToString();
-                        returnUser.Password = col3Password.ToString();
-                        returnUser.Role = col4Role.ToString();
-
-
-                        return returnUser;
-                    }
-                }
-                //validateCmd.ExecuteNonQuery();
-                
-            }
-            catch (Exception e)
-            {
-                // ...handle, rethrow. Also, you might want to catch
-                // more specific exceptions...
-            }
-
-            return null;
+            return u.FirstOrDefault();
         }
         public User RegisterUser(UserRegister userRegister)
         {
-           
+            User user = new User();
             try
             {
-                var allUsers = _context.Users.ToListAsync();
-
-                /* Connection connection = new Connection();
-                 SqlCommand cmd = new SqlCommand();
-                 var sqlConnect = connection.getConnection();
-
-                 using (sqlConnect)
-                 {
-                     sqlConnect.Open();
-                     cmd = new SqlCommand("insert into dbo.Users(Username,Email,Password,Role)values('"+userRegister.Username+"','"+userRegister.Email+"','"+userRegister.Password+ "','"+userRegister.Role+"')", sqlConnect);
-                     cmd.ExecuteNonQuery();
-                     sqlConnect.Close(); 
-                 }*/
+                user = new User
+                {
+                        Username = userRegister.Username,
+                        Password = userRegister.Password,
+                        Email = userRegister.Email,
+                        Role = userRegister.Role
+                    };
+                
+                    _context.Users.Add(user);
+                    _context.SaveChanges(); 
             }
-            catch (Exception e)
+            catch (SqlException exc)
             {
                 // ...handle, rethrow. Also, you might want to catch
                 // more specific exceptions...
+               
             }
-            var returnUser = new User();
-          
-
-            returnUser.Username = userRegister.Username;        
-            returnUser.Email = userRegister.Email;
-            returnUser.Password = userRegister.Password;
-            returnUser.Role = userRegister.Role;    
-
-    
-            return returnUser;
+            return user;
+            
         }
     }
 }

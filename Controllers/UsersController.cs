@@ -6,9 +6,9 @@ namespace MinimalAPI.Controllers
 {
     public class UsersController : Controller
     {
-        private readonly AppDbContext _context; 
+        private readonly UserDbContext _context; 
 
-        public UsersController(AppDbContext context)
+        public UsersController(UserDbContext context)
         {
             _context = context;
         }

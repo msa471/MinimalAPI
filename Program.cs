@@ -14,6 +14,8 @@ using MinimalAPI.Repositories;
 using MinimalAPI.DataLinkLayer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.SqlClient;
+using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
+using MinimalAPI.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -66,7 +68,7 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 
 var connectionString = builder.Configuration["ConnectionStrings:DefaultConnectionString"];
 
-builder.Services.AddDbContext<AppDbContext>(x => x.UseSqlServer(connectionString));
+builder.Services.AddDbContext<UserDbContext>(x => x.UseSqlServer(connectionString));
 
 
 /*
@@ -79,20 +81,27 @@ builder.Services.AddCors(p => p.AddPolicy("corsapp", builder =>
     builder.WithOrigins("*").AllowAnyMethod().AllowAnyHeader();
 }));
 
+builder.Services.AddControllers();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "My API", Version = "v1" });
+}); 
+
 var app = builder.Build();
 app.UseCors("corsapp");
 app.UseSwagger();
 app.UseAuthorization();
 app.UseAuthentication();
 
-app.MapGet("/", () => "Hello World!")
-    .ExcludeFromDescription();
+app.MapGet("/", () => "Hello World!");
+    
 
 app.MapPost("/register",
 (UserRegister user, IUserService service) => Register(user, service));
 
 app.MapPost("/login",
 (UserLogin user, IUserService service) => Login(user, service));
+
 
 app.MapPost("/create",
 [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme, Roles = "Administrator")]
@@ -116,10 +125,46 @@ app.MapDelete("/delete",
 
 IResult Register(UserRegister user, IUserService service) {
     var registeredUser = service.GetRegistered(user);
+    var userLogin = new UserLogin()
+    {
+        Username = registeredUser.Username,
+        Password = registeredUser.Password
+    };
+    var token = getJWT(userLogin,service);
 
+    return Results.Ok(new { token = token, username = registeredUser.Username});
 
-    return Results.Ok(registeredUser);
+}
 
+string getJWT(UserLogin user, IUserService service)
+{
+    var loggedInUser = service.GetUsers(user);
+    if (loggedInUser is null) return "";
+
+    var claims = new[]
+    {
+            new Claim(ClaimTypes.NameIdentifier, loggedInUser.Username),
+            new Claim(ClaimTypes.Email, loggedInUser.Email),
+            new Claim(ClaimTypes.Role, loggedInUser.Role),
+        };
+
+    var token = new JwtSecurityToken
+    (
+        issuer: builder.Configuration["Jwt:Issuer"],
+        audience: builder.Configuration["Jwt:Audience"],
+        claims: claims,
+        expires: DateTime.UtcNow.AddDays(60),
+        notBefore: DateTime.UtcNow,
+        signingCredentials: new SigningCredentials(
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])),
+            SecurityAlgorithms.HmacSha256)
+    );
+
+    var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+    
+    return tokenString;
+
+//    throw new NotImplementedException();
 }
 
 IResult Login(UserLogin user, IUserService service)
@@ -127,33 +172,11 @@ IResult Login(UserLogin user, IUserService service)
     if (!string.IsNullOrEmpty(user.Username) &&
         !string.IsNullOrEmpty(user.Password))
     {
-        var loggedInUser = service.GetUsers(user);
-        if (loggedInUser is null) return Results.NotFound("User not found");
-
-        var claims = new[]
-        { 
-            new Claim(ClaimTypes.NameIdentifier, loggedInUser.Username),
-            new Claim(ClaimTypes.Email, loggedInUser.Email),
-            new Claim(ClaimTypes.Role, loggedInUser.Role),
-        };
-
-        var token = new JwtSecurityToken
-        (
-            issuer: builder.Configuration["Jwt:Issuer"],
-            audience: builder.Configuration["Jwt:Audience"],
-            claims: claims,
-            expires: DateTime.UtcNow.AddDays(60),
-            notBefore: DateTime.UtcNow,
-            signingCredentials: new SigningCredentials(
-                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])),
-                SecurityAlgorithms.HmacSha256)
-        );
-        
-        var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+        var tokenString = getJWT(user,service);
 
         return Results.Ok(tokenString);
     }
-    return (null);
+    return Results.BadRequest(Results.NotFound());
 }
 
 IResult Create(Movie movie, IMovieService service) 
@@ -195,6 +218,8 @@ IResult Delete(int id, IMovieService service)
 
     return Results.Ok(result);
 }
+
+AppDbInitializer.Seed(app);
 
 app.UseSwaggerUI();
  
